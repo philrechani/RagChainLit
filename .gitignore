@@ -7,8 +7,6 @@ config/__pycache__
 .chainlit
 .files
 
-rag_llama_cpp.py
-
 test.ipynb
 
 record_manager_cache.sql
