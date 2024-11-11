@@ -1,0 +1,174 @@
+from typing import List
+from pathlib import Path
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema import StrOutputParser
+from langchain_community.document_loaders import (
+    PyMuPDFLoader,
+)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores.chroma import Chroma
+from langchain.indexes import SQLRecordManager, index
+from langchain.schema import Document
+from langchain.schema.runnable import Runnable, RunnablePassthrough, RunnableConfig
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.embeddings import LlamaCppEmbeddings
+from langchain.llms import llamacpp
+from langchain_core.embeddings import Embeddings
+
+
+
+import chainlit as cl
+
+from rag_llama_cpp import RAG
+
+import time
+
+
+chunk_size = 1000
+chunk_overlap = 100
+
+from config.CONFIG import MODEL_PATH, NAME
+
+PDF_STORAGE_PATH = "./data/pdfs"
+
+source = 'data\\pdfs\\DSM-5.pdf'
+
+print('HELP')
+
+model = RAG(
+    model_path=MODEL_PATH,
+    n_gpu_layers=-1,
+    n_ctx=32768,
+    verbose=False
+    )
+
+def process_pdfs(pdf_storage_path: str):
+    pdf_directory = Path(pdf_storage_path)
+    docs = []  # type: List[Document]
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+    for pdf_path in pdf_directory.glob("*.pdf"):
+        print(f"Loading {pdf_path}...")
+        loader = PyMuPDFLoader(str(pdf_path))
+        documents = loader.load()
+        print(f"Loaded {len(documents)} documents from {pdf_path}.")
+        docs += text_splitter.split_documents(documents)
+
+    print(f"Total documents after splitting: {len(docs)}")
+    
+    print("Creating Chroma index...")
+    
+    # change to the more fine-grained chroma storage
+    return docs
+
+def initialize_index(docs, client, collection, embedding_function):
+    
+    doc_search = Chroma(client=client,collection_name=collection.name, embedding_function=embedding_function)
+    
+    
+    print("Chroma index created.")
+
+    namespace = "chromadb/my_documents"
+    record_manager = SQLRecordManager(namespace, db_url="sqlite:///record_manager_cache.sql")
+    record_manager.create_schema()
+
+    index_result = index(
+        docs,
+        record_manager,
+        doc_search,
+        cleanup="incremental",
+        source_id_key="source",
+    )
+
+    print(f"Indexing stats: {index_result}")
+
+    return doc_search
+
+model.initialize_vectorstore(type='persist')
+results = model.query_collection(query_texts=[""],n_results=1,where={'source': source})
+print(results)
+
+time.sleep(5)
+docs = process_pdfs(PDF_STORAGE_PATH)
+print(docs[0].metadata['source'])
+time.sleep(5)
+if len(results['ids'][0]) == 0:
+    model.add_to_collection(docs)
+client, collection, embedding_function = model.get_chroma_objects()
+doc_search = initialize_index(docs, client, collection, embedding_function)    
+print(doc_search)
+
+print('HELP ME FOR THE LOVE OF GOD')
+
+
+@cl.on_chat_start
+async def on_chat_start():
+    template = """Answer the question based only on the following context:
+
+    {context}
+
+    Question: {question}
+    """
+    prompt = ChatPromptTemplate.from_template(template)
+
+    def format_docs(docs):
+        return "\n\n".join([d.page_content for d in docs])
+
+    retriever = doc_search.as_retriever()
+    
+    def prompt_to_string(prompt_value):
+        if isinstance(prompt_value, (dict, list)):
+            return prompt_value
+        return prompt_value.to_string()
+
+
+    # test with this
+    runnable = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | prompt_to_string
+        | model
+        | StrOutputParser()
+    )
+
+    cl.user_session.set("runnable", runnable)
+
+
+@cl.on_message
+async def on_message(message: cl.Message):
+    runnable = cl.user_session.get("runnable")  # type: Runnable
+    msg = cl.Message(content="")
+
+    class PostMessageHandler(BaseCallbackHandler):
+        """
+        Callback handler for handling the retriever and LLM processes.
+        Used to post the sources of the retrieved documents as a Chainlit element.
+        """
+
+        def __init__(self, msg: cl.Message):
+            BaseCallbackHandler.__init__(self)
+            self.msg = msg
+            self.sources = set()  # To store unique pairs
+
+        def on_retriever_end(self, documents, *, run_id, parent_run_id, **kwargs):
+            for d in documents:
+                source_page_pair = (d.metadata['source'], d.metadata['page'])
+                self.sources.add(source_page_pair)  # Add unique pairs to the set
+
+        def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs):
+            if len(self.sources):
+                sources_text = "\n".join([f"{source}#page={page}" for source, page in self.sources])
+                self.msg.elements.append(
+                    cl.Text(name="Sources", content=sources_text, display="inline")
+                )
+
+    async for chunk in runnable.astream(
+        message.content,
+        config=RunnableConfig(callbacks=[
+            cl.LangchainCallbackHandler(),
+            PostMessageHandler(msg)
+        ]),
+    ):
+        await msg.stream_token(chunk)
+
+    await msg.send()
