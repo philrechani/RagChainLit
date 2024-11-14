@@ -82,6 +82,10 @@ class RAG(Llama):
         self.reinitialize_model('chat')
         return super().__call__(prompt,max_tokens= None,**kwargs)['choices'][0]['text']
     
+    def create_chat_completion(self,*args, **kwargs):
+        self.reinitialize_model('chat')
+        return super().create_chat_completion(*args, **kwargs)
+    
     def embed(self, text, debug=True):
         self.reinitialize_model('embed')
         if debug:

@@ -11,18 +11,10 @@ from langchain.indexes import SQLRecordManager, index
 from langchain.schema import Document
 from langchain.schema.runnable import Runnable, RunnablePassthrough, RunnableConfig
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.embeddings import LlamaCppEmbeddings
-from langchain.llms import llamacpp
-from langchain_core.embeddings import Embeddings
-
-
 
 import chainlit as cl
 
-from rag_llama_cpp import RAG
-
-import time
-
+from hug_rag import RAG
 
 chunk_size = 1000
 chunk_overlap = 100
@@ -35,13 +27,9 @@ source = 'data\\pdfs\\DSM-5.pdf'
 
 print('HELP')
 
-model = RAG(
-    model_path=MODEL_PATH,
-    n_gpu_layers=-1,
-    n_ctx=32768,
-    verbose=False
-    )
+model = RAG.create(MODEL_PATH,gpu_layers =20)
 
+print('help?')
 def process_pdfs(pdf_storage_path: str):
     pdf_directory = Path(pdf_storage_path)
     docs = []  # type: List[Document]
@@ -88,10 +76,10 @@ model.initialize_vectorstore(type='persist')
 results = model.query_collection(query_texts=[""],n_results=1,where={'source': source})
 print(results)
 
-time.sleep(5)
+
 docs = process_pdfs(PDF_STORAGE_PATH)
 print(docs[0].metadata['source'])
-time.sleep(5)
+
 if len(results['ids'][0]) == 0:
     model.add_to_collection(docs)
 client, collection, embedding_function = model.get_chroma_objects()
@@ -99,7 +87,6 @@ doc_search = initialize_index(docs, client, collection, embedding_function)
 print(doc_search)
 
 print('HELP ME FOR THE LOVE OF GOD')
-
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -120,7 +107,7 @@ async def on_chat_start():
         if isinstance(prompt_value, (dict, list)):
             return prompt_value
         return prompt_value.to_string()
-
+        
 
     # test with this
     runnable = (

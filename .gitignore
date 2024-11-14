@@ -7,7 +7,9 @@ config/__pycache__
 .chainlit
 .files
 
-test.ipynb
-
 record_manager_cache.sql
 data
+
+test_chatbot.ipynb
+test_ctransformers.ipynb
+test.ipynb
