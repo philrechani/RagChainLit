@@ -53,17 +53,17 @@ class VectorDatabase:
 
     def initialize_vectorstore(self, type='memory', collection_name = None):
         if collection_name is None:
-            collection_name = self.current_collection_name
+            collection_name = self._current_collection_name
             
-        if not self.current_client:    
+        if not self._current_client:    
             if type == 'persist':
-                self.current_client = chromadb.PersistentClient(path = self.chroma_persist_directory)
+                self._current_client = chromadb.PersistentClient(path = self.chroma_persist_directory)
                 
             if type == 'remote':
-                self.current_client = chromadb.HttpClient()
+                self._current_client = chromadb.HttpClient()
                 
             if type == 'memory':
-                self.current_client = chromadb.Client()
+                self._current_client = chromadb.Client()
             
             self._current_collection = self._current_client.get_or_create_collection(name = collection_name,embedding_function=self._embedding_function)
             
@@ -132,6 +132,9 @@ class Chug(LLM):
     
     lib: Optional[Any] = None
     """The path to a shared library or one of `avx2`, `avx`, `basic`."""
+    
+    def embed(self,text,**kwargs):
+        return self.client.embed(text,**kwargs)
     
     @property
     def _llm_type(self) -> str:

@@ -10,6 +10,8 @@ config/__pycache__
 record_manager_cache.sql
 data
 
+test_lc_cb_2.ipynb
+test_langchain_chatbot.ipynb
 test_chatbot.ipynb
 test_ctransformers.ipynb
 test.ipynb

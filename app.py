@@ -1,5 +1,8 @@
-from typing import List
+from typing import List, Sequence
+from typing_extensions import Annotated, TypedDict
+
 from pathlib import Path
+
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import StrOutputParser
 from langchain_community.document_loaders import (
@@ -11,10 +14,15 @@ from langchain.indexes import SQLRecordManager, index
 from langchain.schema import Document
 from langchain.schema.runnable import Runnable, RunnablePassthrough, RunnableConfig
 from langchain.callbacks.base import BaseCallbackHandler
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langgraph.graph.message import add_messages
+
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, MessagesState, StateGraph
 
 import chainlit as cl
 
-from hug_rag import RAG
+from hug_rag import Chug, VectorDatabase
 
 chunk_size = 1000
 chunk_overlap = 100
@@ -26,8 +34,8 @@ PDF_STORAGE_PATH = "./data/pdfs"
 source = 'data\\pdfs\\DSM-5.pdf'
 
 print('HELP')
-
-model = RAG.create(MODEL_PATH,gpu_layers =20)
+config = {'context_length': 2048, 'gpu_layers': 50}
+model = Chug(model_path=MODEL_PATH,config=config)
 
 print('help?')
 def process_pdfs(pdf_storage_path: str):
@@ -72,24 +80,25 @@ def initialize_index(docs, client, collection, embedding_function):
 
     return doc_search
 
-model.initialize_vectorstore(type='persist')
-results = model.query_collection(query_texts=[""],n_results=1,where={'source': source})
+db = VectorDatabase(model)
+db.initialize_vectorstore('persist')
+results = db.query_collection(query_texts=[""],n_results=1,where={'source': source})
 print(results)
-
 
 docs = process_pdfs(PDF_STORAGE_PATH)
 print(docs[0].metadata['source'])
 
 if len(results['ids'][0]) == 0:
-    model.add_to_collection(docs)
-client, collection, embedding_function = model.get_chroma_objects()
+    db.add_to_collection(docs)
+client, collection, embedding_function = db.chroma_objects
 doc_search = initialize_index(docs, client, collection, embedding_function)    
 print(doc_search)
 
 print('HELP ME FOR THE LOVE OF GOD')
 
-@cl.on_chat_start
+@cl.on_chat_start 
 async def on_chat_start():
+    
     template = """Answer the question based only on the following context:
 
     {context}
@@ -107,8 +116,8 @@ async def on_chat_start():
         if isinstance(prompt_value, (dict, list)):
             return prompt_value
         return prompt_value.to_string()
+    # Define the function that calls the model
         
-
     # test with this
     runnable = (
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
@@ -148,7 +157,7 @@ async def on_message(message: cl.Message):
                 self.msg.elements.append(
                     cl.Text(name="Sources", content=sources_text, display="inline")
                 )
-
+    
     async for chunk in runnable.astream(
         message.content,
         config=RunnableConfig(callbacks=[
