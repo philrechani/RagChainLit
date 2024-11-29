@@ -10,3 +10,6 @@ model_file = ''
 PERSIST_DIRECTORY = ''
 
 MODEL_PATH = home_path + model_file
+
+# model config
+MODEL_CONFIG = dict()

@@ -22,20 +22,20 @@ from langgraph.graph import START, MessagesState, StateGraph
 
 import chainlit as cl
 
-from hug_rag import Chug, VectorDatabase
+from hug_rag_2 import Chug, VectorDatabase
 
 chunk_size = 1000
 chunk_overlap = 100
 
-from config.CONFIG import MODEL_PATH, MODEL_CONFIG
+from config.CONFIG import MODEL_PATH, NAME
 
 PDF_STORAGE_PATH = "./data/pdfs"
 
 source = 'data\\pdfs\\DSM-5.pdf'
 
 print('HELP')
-
-model = Chug(model_path=MODEL_PATH,config=MODEL_CONFIG)
+config = {'context_length': 2048, 'gpu_layers': 50,'max_new_tokens': 1024,'stream':True}
+model = Chug(model=MODEL_PATH,config=config)
 
 print('help?')
 def process_pdfs(pdf_storage_path: str):
@@ -161,7 +161,7 @@ async def on_message(message: cl.Message):
         def on_llm_new_token(self, token: str, **kwargs) -> None:
             print(token, end="", flush=True)
             return token
-    
+        
     async for chunk in runnable.astream(
         message.content,
         config=RunnableConfig(callbacks=[

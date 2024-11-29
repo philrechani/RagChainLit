@@ -15,3 +15,4 @@ test_langchain_chatbot.ipynb
 test_chatbot.ipynb
 test_ctransformers.ipynb
 test.ipynb
+test*
